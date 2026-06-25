@@ -58,7 +58,22 @@ def classificar(nota):
         return "Crítico 🔴"
 
 if arquivo:
-    df = pd.read_excel(arquivo, header=2)
+    bruto = pd.read_excel(arquivo, header=None)
+
+linha_cabecalho = None
+
+for i in range(len(bruto)):
+    valores_linha = bruto.iloc[i].astype(str).str.strip().tolist()
+    if "Motorista" in valores_linha:
+        linha_cabecalho = i
+        break
+
+if linha_cabecalho is None:
+    st.error("Não encontrei a linha do cabeçalho com a coluna Motorista.")
+    st.dataframe(bruto.head(15))
+    st.stop()
+
+df = pd.read_excel(arquivo, header=linha_cabecalho)
 
     df.columns = df.columns.astype(str).str.strip()
 
