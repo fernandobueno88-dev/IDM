@@ -75,7 +75,7 @@ if linha_cabecalho is None:
 
 df = pd.read_excel(arquivo, header=linha_cabecalho)
 
-    df.columns = df.columns.astype(str).str.strip()
+df.columns = df.columns.astype(str).str.strip()
 
     colunas_necessarias = [
         "Motorista",
