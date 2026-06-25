@@ -1,71 +1,154 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(
-    page_title="IDM Analytics",
-    page_icon="🚛",
-    layout="wide"
-)
+st.set_page_config(page_title="IDM Analytics", page_icon="🚛", layout="wide")
 
 st.title("🚛 IDM Analytics")
-st.subheader("Índice de Desempenho do Motorista")
+st.caption("Índice de Desempenho do Motorista")
 
-st.info("Envie o relatório da Maxtrack em Excel para gerar a nota dos motoristas.")
+arquivo = st.file_uploader("📁 Envie o relatório da Maxtrack", type=["xlsx"])
 
-arquivo = st.file_uploader("📁 Envie o arquivo Excel da Maxtrack", type=["xlsx"])
+def tempo_para_horas(valor):
+    try:
+        if pd.isna(valor):
+            return 0
+        if isinstance(valor, str):
+            partes = valor.split(":")
+            if len(partes) >= 2:
+                return int(partes[0]) + int(partes[1]) / 60
+        return float(valor)
+    except:
+        return 0
 
-if arquivo is not None:
-    df = pd.read_excel(arquivo)
+def calcular_idm(row, media_consumo, media_km):
+    nota = 100
 
-    st.success("Arquivo carregado com sucesso!")
+    consumo = row.get("Km/l", 0)
+    velocidade = row.get("Velocidade Máxima", 0)
+    km = row.get("Distância (Km)", 0)
+    tempo_parado = row.get("Horas Parado", 0)
 
-    st.write("### Prévia dos dados")
-    st.dataframe(df)
+    if consumo < media_consumo:
+        nota -= 30
 
-    st.write("### Colunas encontradas no arquivo")
-    st.write(df.columns.tolist())
+    if velocidade > 80:
+        nota -= 20
 
-    st.divider()
+    if tempo_parado > 4:
+        nota -= 15
 
-    st.write("## 📊 Indicador IDM")
+    if km < media_km * 0.5:
+        nota -= 10
 
-    # Aqui vamos ajustar os nomes das colunas conforme o relatório real
-    coluna_motorista = st.selectbox("Selecione a coluna do motorista", df.columns)
-    coluna_km = st.selectbox("Selecione a coluna de KM rodado", df.columns)
-    coluna_consumo = st.selectbox("Selecione a coluna de consumo ou média", df.columns)
+    if km <= 0 or consumo <= 0:
+        nota -= 20
 
-    if st.button("Gerar Indicador"):
-        resultado = df.groupby(coluna_motorista).agg({
-            coluna_km: "sum",
-            coluna_consumo: "mean"
+    return max(nota, 0)
+
+def classificar(nota):
+    if nota >= 90:
+        return "Excelente 🟢"
+    elif nota >= 80:
+        return "Bom 🔵"
+    elif nota >= 70:
+        return "Atenção 🟡"
+    elif nota >= 60:
+        return "Ruim 🟠"
+    else:
+        return "Crítico 🔴"
+
+if arquivo:
+    df = pd.read_excel(arquivo, header=2)
+
+    df.columns = df.columns.astype(str).str.strip()
+
+    colunas_necessarias = [
+        "Motorista",
+        "Distância (Km)",
+        "Velocidade Máxima",
+        "Km/l",
+        "Tempo Parado",
+        "Tempo de Condução"
+    ]
+
+    faltando = [c for c in colunas_necessarias if c not in df.columns]
+
+    if faltando:
+        st.error("Algumas colunas não foram encontradas no relatório:")
+        st.write(faltando)
+        st.write("Colunas encontradas:")
+        st.write(df.columns.tolist())
+    else:
+        df = df[df["Motorista"].notna()]
+
+        df["Distância (Km)"] = pd.to_numeric(df["Distância (Km)"], errors="coerce").fillna(0)
+        df["Velocidade Máxima"] = pd.to_numeric(df["Velocidade Máxima"], errors="coerce").fillna(0)
+        df["Km/l"] = pd.to_numeric(df["Km/l"], errors="coerce").fillna(0)
+
+        df["Horas Parado"] = df["Tempo Parado"].apply(tempo_para_horas)
+        df["Horas Condução"] = df["Tempo de Condução"].apply(tempo_para_horas)
+
+        resumo = df.groupby("Motorista").agg({
+            "Distância (Km)": "sum",
+            "Km/l": "mean",
+            "Velocidade Máxima": "max",
+            "Horas Parado": "sum",
+            "Horas Condução": "sum"
         }).reset_index()
 
-        resultado.columns = ["Motorista", "KM Rodado", "Média/Consumo"]
+        media_consumo = resumo["Km/l"].mean()
+        media_km = resumo["Distância (Km)"].mean()
 
-        resultado["Nota IDM"] = 100
-
-        resultado.loc[resultado["Média/Consumo"] < resultado["Média/Consumo"].mean(), "Nota IDM"] -= 20
-
-        resultado["Classificação"] = resultado["Nota IDM"].apply(
-            lambda nota: "Excelente" if nota >= 90 else
-            "Bom" if nota >= 80 else
-            "Atenção" if nota >= 60 else
-            "Crítico"
+        resumo["Nota IDM"] = resumo.apply(
+            lambda row: calcular_idm(row, media_consumo, media_km),
+            axis=1
         )
 
-        st.write("### Resultado por Motorista")
-        st.dataframe(resultado)
+        resumo["Classificação"] = resumo["Nota IDM"].apply(classificar)
 
-        st.write("### Ranking IDM")
-        ranking = resultado.sort_values(by="Nota IDM", ascending=False)
-        st.dataframe(ranking)
+        resumo = resumo.sort_values(by="Nota IDM", ascending=False)
+
+        st.subheader("📊 Dashboard Executivo")
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        col1.metric("Motoristas", resumo["Motorista"].nunique())
+        col2.metric("KM Total", f'{resumo["Distância (Km)"].sum():,.0f} km')
+        col3.metric("Consumo Médio", f'{media_consumo:.2f} km/l')
+        col4.metric("Nota Média IDM", f'{resumo["Nota IDM"].mean():.1f}')
+
+        st.divider()
+
+        st.subheader("🏆 Ranking dos Motoristas")
+        st.dataframe(
+            resumo,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        st.subheader("📈 Top 10 - Nota IDM")
+        top10 = resumo.head(10).set_index("Motorista")
+        st.bar_chart(top10["Nota IDM"])
+
+        st.subheader("⛽ Consumo por Motorista")
+        consumo = resumo.sort_values(by="Km/l", ascending=False).set_index("Motorista")
+        st.bar_chart(consumo["Km/l"])
+
+        st.subheader("🚛 KM Rodado por Motorista")
+        km = resumo.sort_values(by="Distância (Km)", ascending=False).set_index("Motorista")
+        st.bar_chart(km["Distância (Km)"])
+
+        csv = resumo.to_csv(index=False).encode("utf-8-sig")
 
         st.download_button(
-            label="📥 Baixar resultado em Excel",
-            data=ranking.to_csv(index=False).encode("utf-8"),
-            file_name="resultado_idm.csv",
+            label="📥 Baixar Ranking IDM",
+            data=csv,
+            file_name="ranking_idm.csv",
             mime="text/csv"
         )
 
+        with st.expander("📋 Ver dados originais"):
+            st.dataframe(df, use_container_width=True)
+
 else:
-    st.warning("Aguardando envio do arquivo.")
+    st.info("Envie o arquivo Excel da Maxtrack para gerar o IDM.")
