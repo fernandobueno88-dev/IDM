@@ -2,11 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 
-st.set_page_config(
-    page_title="IDM Analytics",
-    page_icon="🚛",
-    layout="wide"
-)
+st.set_page_config(page_title="IDM Analytics", page_icon="🚛", layout="wide")
 
 st.title("🚛 IDM Analytics")
 st.caption("Índice de Desempenho do Motorista")
@@ -27,10 +23,17 @@ def encontrar_linha_cabecalho(arquivo_excel):
 
     for i in range(len(bruto)):
         valores = bruto.iloc[i].astype(str).str.strip().tolist()
-
         if "Motorista" in valores:
             return i
 
+    return None
+
+
+def encontrar_coluna(df, palavras):
+    for coluna in df.columns:
+        nome = str(coluna).lower()
+        if all(p.lower() in nome for p in palavras):
+            return coluna
     return None
 
 
@@ -93,7 +96,7 @@ def calcular_idm(row, media_consumo, media_km):
     if parado > 4:
         nota -= 10
 
-    if km < media_km * 0.5:
+    if media_km > 0 and km < media_km * 0.5:
         nota -= 10
 
     return max(nota, 0)
@@ -107,19 +110,25 @@ if arquivo is not None:
         st.stop()
 
     df = pd.read_excel(arquivo, header=linha_cabecalho)
-
     df.columns = [limpar_nome_coluna(c) for c in df.columns]
 
-    colunas_necessarias = [
-        "Motorista",
-        "Distância (Km)",
-        "Velocidade Máxima",
-        "Km/l",
-        "Tempo Parado",
-        "Tempo de Condução"
-    ]
+    col_motorista = encontrar_coluna(df, ["motorista"])
+    col_distancia = encontrar_coluna(df, ["distância"])
+    col_velocidade = encontrar_coluna(df, ["velocidade"])
+    col_consumo = encontrar_coluna(df, ["km/l"])
+    col_parado = encontrar_coluna(df, ["tempo", "parado"])
+    col_conducao = encontrar_coluna(df, ["tempo", "condu"])
 
-    faltando = [c for c in colunas_necessarias if c not in df.columns]
+    colunas = {
+        "Motorista": col_motorista,
+        "Distância (Km)": col_distancia,
+        "Velocidade Máxima": col_velocidade,
+        "Km/l": col_consumo,
+        "Tempo Parado": col_parado,
+        "Tempo Condução": col_conducao
+    }
+
+    faltando = [nome for nome, coluna in colunas.items() if coluna is None]
 
     if faltando:
         st.error("Algumas colunas não foram encontradas no relatório.")
@@ -129,6 +138,15 @@ if arquivo is not None:
         st.write(df.columns.tolist())
         st.stop()
 
+    df = df.rename(columns={
+        col_motorista: "Motorista",
+        col_distancia: "Distância (Km)",
+        col_velocidade: "Velocidade Máxima",
+        col_consumo: "Km/l",
+        col_parado: "Tempo Parado",
+        col_conducao: "Tempo Condução"
+    })
+
     df = df[df["Motorista"].notna()]
     df = df[df["Motorista"].astype(str).str.strip() != ""]
 
@@ -137,7 +155,7 @@ if arquivo is not None:
     df["Km/l"] = pd.to_numeric(df["Km/l"], errors="coerce").fillna(0)
 
     df["Horas Parado"] = df["Tempo Parado"].apply(tempo_para_horas)
-    df["Horas Condução"] = df["Tempo de Condução"].apply(tempo_para_horas)
+    df["Horas Condução"] = df["Tempo Condução"].apply(tempo_para_horas)
 
     resumo = df.groupby("Motorista").agg({
         "Distância (Km)": "sum",
@@ -162,7 +180,6 @@ if arquivo is not None:
     )
 
     resumo["Classificação"] = resumo["Nota IDM"].apply(classificar_idm)
-
     resumo = resumo.sort_values(by="Nota IDM", ascending=False)
 
     st.success("Arquivo processado com sucesso!")
