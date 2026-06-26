@@ -7,50 +7,54 @@ st.set_page_config(page_title="IDM Analytics", page_icon="🚛", layout="wide")
 
 st.markdown("""
 <style>
-.big-card {
-    padding: 25px;
+.card-geral {
+    padding: 24px;
+    border-radius: 18px;
+    color: white;
+    min-height: 330px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+}
+.verde { background: linear-gradient(135deg, #16a34a, #22c55e); }
+.laranja { background: linear-gradient(135deg, #f59e0b, #f97316); }
+.vermelho { background: linear-gradient(135deg, #dc2626, #ef4444); }
+
+.titulo-card {
+    font-size: 17px;
+    font-weight: 700;
+    margin-bottom: 20px;
+}
+.nota-card {
+    font-size: 56px;
+    font-weight: 900;
+    margin-bottom: 8px;
+}
+.status-card {
+    font-size: 21px;
+    font-weight: 800;
+    margin-bottom: 35px;
+}
+.detalhe-card {
+    font-size: 14px;
+    line-height: 1.7;
+    margin-top: 18px;
+}
+.caixa-indicador {
+    padding: 22px;
     border-radius: 16px;
     background: #f8fafc;
     border: 1px solid #e5e7eb;
-    min-height: 170px;
+    min-height: 125px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
 }
-.score-card {
-    padding: 25px;
-    border-radius: 16px;
-    background: linear-gradient(135deg, #16a34a, #22c55e);
-    color: white;
-    min-height: 260px;
-}
-.orange-card {
-    padding: 25px;
-    border-radius: 16px;
-    background: linear-gradient(135deg, #f59e0b, #f97316);
-    color: white;
-    min-height: 260px;
-}
-.red-card {
-    padding: 25px;
-    border-radius: 16px;
-    background: linear-gradient(135deg, #dc2626, #ef4444);
-    color: white;
-    min-height: 260px;
-}
-.metric-title {
+.indicador-titulo {
     font-size: 15px;
     color: #64748b;
 }
-.metric-value {
-    font-size: 34px;
+.indicador-valor {
+    font-size: 30px;
     font-weight: 800;
     color: #0f172a;
-}
-.category-score {
-    font-size: 44px;
-    font-weight: 900;
-}
-.category-name {
-    font-size: 16px;
-    font-weight: 700;
+    margin-top: 8px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -122,12 +126,12 @@ def classificar(nota):
     return "Pode ser melhorado"
 
 
-def cor_card(nota):
+def classe_cor(nota):
     if nota >= 80:
-        return "score-card"
+        return "verde"
     elif nota >= 60:
-        return "orange-card"
-    return "red-card"
+        return "laranja"
+    return "vermelho"
 
 
 def calcular_notas(row, media_consumo, media_km):
@@ -150,6 +154,9 @@ def calcular_notas(row, media_consumo, media_km):
     if km <= 0:
         economia -= 30
 
+    if media_km > 0 and km < media_km * 0.5:
+        economia -= 15
+
     if velocidade > 80:
         seguranca -= 25
         velocidade_nota -= 30
@@ -164,9 +171,6 @@ def calcular_notas(row, media_consumo, media_km):
     if parado > 6:
         parada -= 25
 
-    if media_km > 0 and km < media_km * 0.5:
-        economia -= 15
-
     if conducao <= 0:
         parada -= 20
 
@@ -175,36 +179,47 @@ def calcular_notas(row, media_consumo, media_km):
     velocidade_nota = max(velocidade_nota, 0)
     parada = max(parada, 0)
 
-    nota_geral = round((economia * 0.35) + (seguranca * 0.25) + (velocidade_nota * 0.20) + (parada * 0.20), 0)
+    nota_geral = round(
+        (economia * 0.35)
+        + (seguranca * 0.25)
+        + (velocidade_nota * 0.20)
+        + (parada * 0.20),
+        0
+    )
 
     return economia, seguranca, velocidade_nota, parada, nota_geral
 
 
 def card_categoria(titulo, nota, detalhes):
-    classe = cor_card(nota)
+    cor = classe_cor(nota)
+    status = classificar(nota)
+
+    detalhes_formatados = ""
+    for item in detalhes:
+        detalhes_formatados += f"<div>• {item}</div>"
 
     html = f"""
-    <div class="{classe}">
-        <div style="font-size:15px;">{titulo}</div>
-        <div class="category-score">{nota:.0f}</div>
-        <div class="category-name">{classificar(nota)}</div>
-        <hr style="border: 0.5px solid rgba(255,255,255,0.4);">
-        {detalhes}
+    <div class="card-geral {cor}">
+        <div class="titulo-card">{titulo}</div>
+        <div class="nota-card">{nota:.0f}</div>
+        <div class="status-card">{status}</div>
+        <hr style="border: 0.5px solid rgba(255,255,255,0.45);">
+        <div class="detalhe-card">
+            {detalhes_formatados}
+        </div>
     </div>
     """
     st.markdown(html, unsafe_allow_html=True)
 
 
 def card_indicador(titulo, valor):
-    st.markdown(
-        f"""
-        <div class="big-card">
-            <div class="metric-title">{titulo}</div>
-            <div class="metric-value">{valor}</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    html = f"""
+    <div class="caixa-indicador">
+        <div class="indicador-titulo">{titulo}</div>
+        <div class="indicador-valor">{valor}</div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
 
 
 if arquivo is not None:
@@ -338,58 +353,62 @@ if arquivo is not None:
             st.subheader(f"🚛 {motorista_selecionado}")
             st.caption(f"Período selecionado: {periodo_texto}")
 
-            col_geral, col1, col2, col3, col4 = st.columns([1.3, 1, 1, 1, 1])
+            col_geral, col1, col2, col3, col4 = st.columns([1.35, 1, 1, 1, 1])
 
             with col_geral:
                 card_categoria(
                     "Pontuação IDM",
                     m["Nota IDM"],
-                    f"""
-                    <p>Diesel / Operação</p>
-                    <p>80-100: Bom</p>
-                    <p>60-79: Média</p>
-                    <p>0-59: Pode ser melhorado</p>
-                    """
+                    [
+                        "Diesel / Operação",
+                        "80-100: Bom",
+                        "60-79: Média",
+                        "0-59: Pode ser melhorado"
+                    ]
                 )
 
             with col1:
                 card_categoria(
                     "🛡️ Segurança",
                     m["Segurança"],
-                    f"""
-                    <p>Velocidade máxima: {m["Velocidade Máxima"]:.0f} km/h</p>
-                    <p>Controle operacional</p>
-                    """
+                    [
+                        f"Velocidade máxima: {m['Velocidade Máxima']:.0f} km/h",
+                        "Referência: até 80 km/h",
+                        "Avalia condução segura"
+                    ]
                 )
 
             with col2:
                 card_categoria(
                     "⛽ Economia",
                     m["Economia"],
-                    f"""
-                    <p>Consumo: {m["Km/l"]:.2f} km/l</p>
-                    <p>Média frota: {media_consumo:.2f} km/l</p>
-                    """
+                    [
+                        f"Consumo: {m['Km/l']:.2f} km/l",
+                        f"Média da frota: {media_consumo:.2f} km/l",
+                        "Avalia eficiência no diesel"
+                    ]
                 )
 
             with col3:
                 card_categoria(
                     "⚡ Velocidade",
                     m["Velocidade"],
-                    f"""
-                    <p>Máxima: {m["Velocidade Máxima"]:.0f} km/h</p>
-                    <p>Referência: até 80 km/h</p>
-                    """
+                    [
+                        f"Máxima: {m['Velocidade Máxima']:.0f} km/h",
+                        "Acima de 80 km/h penaliza",
+                        "Controle de excesso"
+                    ]
                 )
 
             with col4:
                 card_categoria(
                     "🅿️ Parada",
                     m["Parada"],
-                    f"""
-                    <p>Tempo parado: {horas_para_texto(m["Horas Parado"])}</p>
-                    <p>Condução: {horas_para_texto(m["Horas Condução"])}</p>
-                    """
+                    [
+                        f"Tempo parado: {horas_para_texto(m['Horas Parado'])}",
+                        f"Tempo condução: {horas_para_texto(m['Horas Condução'])}",
+                        "Avalia ociosidade"
+                    ]
                 )
 
             st.divider()
@@ -399,13 +418,33 @@ if arquivo is not None:
             k1, k2, k3, k4, k5 = st.columns(5)
 
             with k1:
-                card_indicador("Tempo total", horas_para_texto(m["Horas Condução"] + m["Horas Parado"]))
+                card_indicador(
+                    "Tempo total",
+                    horas_para_texto(m["Horas Condução"] + m["Horas Parado"])
+                )
+
             with k2:
-                card_indicador("Distância total", f'{m["Distância (Km)"]:,.2f} km')
+                card_indicador(
+                    "Distância total",
+                    f'{m["Distância (Km)"]:,.2f} km'
+                )
+
             with k3:
-                card_indicador("Condução média", f'{m["Velocidade Máxima"]:.2f} km/h')
+                velocidade_media = 0
+                if m["Horas Condução"] > 0:
+                    velocidade_media = m["Distância (Km)"] / m["Horas Condução"]
+
+                card_indicador(
+                    "Condução média",
+                    f"{velocidade_media:.2f} km/h"
+                )
+
             with k4:
-                card_indicador("Consumo médio", f'{m["Km/l"]:.2f} km/l')
+                card_indicador(
+                    "Consumo médio",
+                    f'{m["Km/l"]:.2f} km/l'
+                )
+
             with k5:
                 if m["CO2"] > 0:
                     card_indicador("CO₂", f'{m["CO2"]:,.2f} kg')
