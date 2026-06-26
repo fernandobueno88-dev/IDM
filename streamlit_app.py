@@ -74,7 +74,6 @@ def tempo_para_horas(valor):
         return 0
 
     texto = str(valor).lower().strip()
-
     h = re.search(r"(\d+)\s*h", texto)
     m = re.search(r"(\d+)\s*m", texto)
     s = re.search(r"(\d+)\s*s", texto)
@@ -169,6 +168,47 @@ def calcular_notas(row, media_consumo, media_km):
     return seguranca, economia, rpm, produtividade, nota_geral
 
 
+def gerar_resumo(dados, grupo, media_consumo_base=None, media_km_base=None):
+    resumo = dados.groupby(grupo).agg({
+        "Distância (Km)": "sum",
+        "Km/l": "mean",
+        "Velocidade Máxima": "max",
+        "Horas Parado": "sum",
+        "Horas Condução": "sum",
+        "Litros": "sum",
+        "CO2": "sum",
+        "RPM Verde (%)": "mean",
+        "RPM Azul (%)": "mean",
+        "RPM Amarela (%)": "mean"
+    }).reset_index()
+
+    if media_consumo_base is None:
+        media_consumo = resumo[resumo["Km/l"] > 0]["Km/l"].mean()
+    else:
+        media_consumo = media_consumo_base
+
+    if media_km_base is None:
+        media_km = resumo[resumo["Distância (Km)"] > 0]["Distância (Km)"].mean()
+    else:
+        media_km = media_km_base
+
+    if pd.isna(media_consumo):
+        media_consumo = 0
+    if pd.isna(media_km):
+        media_km = 0
+
+    notas = resumo.apply(lambda row: calcular_notas(row, media_consumo, media_km), axis=1)
+
+    resumo["Segurança"] = [n[0] for n in notas]
+    resumo["Economia"] = [n[1] for n in notas]
+    resumo["RPM"] = [n[2] for n in notas]
+    resumo["Produtividade"] = [n[3] for n in notas]
+    resumo["Nota IDM Biomata"] = [n[4] for n in notas]
+    resumo["Classificação"] = resumo["Nota IDM Biomata"].apply(classificar)
+
+    return resumo, media_consumo, media_km
+
+
 def card_categoria(titulo, nota, detalhes):
     html_detalhes = "".join([f"<div>• {d}</div>" for d in detalhes])
     html = f"""
@@ -209,9 +249,10 @@ if arquivo is not None:
     col_consumo = encontrar_coluna(df, ["km/l"])
     col_parado = encontrar_coluna(df, ["tempo", "parado"])
     col_conducao = encontrar_coluna(df, ["tempo", "condu"])
+    col_frota = encontrar_coluna_opcional(df, [["frota"], ["prefixo"], ["veículo"]])
+    col_placa = encontrar_coluna_opcional(df, [["placa"]])
     col_litros = encontrar_coluna_opcional(df, [["litros"], ["combustível"]])
     col_co2 = encontrar_coluna_opcional(df, [["co2"], ["co₂"]])
-
     col_rpm_verde = encontrar_coluna_opcional(df, [["rpm", "verde"], ["faixa", "verde"]])
     col_rpm_azul = encontrar_coluna_opcional(df, [["rpm", "azul"], ["faixa", "azul"]])
     col_rpm_amarela = encontrar_coluna_opcional(df, [["rpm", "amarela"], ["faixa", "amarela"]])
@@ -243,6 +284,10 @@ if arquivo is not None:
         col_conducao: "Tempo Condução"
     }
 
+    if col_frota:
+        renomear[col_frota] = "Prefixo"
+    if col_placa:
+        renomear[col_placa] = "Placa"
     if col_litros:
         renomear[col_litros] = "Litros"
     if col_co2:
@@ -259,13 +304,19 @@ if arquivo is not None:
     df = df[df["Motorista"].notna()]
     df = df[df["Motorista"].astype(str).str.strip() != ""]
 
+    if "Prefixo" not in df.columns:
+        if "Placa" in df.columns:
+            df["Prefixo"] = df["Placa"]
+        else:
+            df["Prefixo"] = "Sem prefixo"
+
+    df["Prefixo"] = df["Prefixo"].astype(str).str.strip()
     df["Distância (Km)"] = pd.to_numeric(df["Distância (Km)"], errors="coerce").fillna(0)
     df["Velocidade Máxima"] = pd.to_numeric(df["Velocidade Máxima"], errors="coerce").fillna(0)
     df["Km/l"] = pd.to_numeric(df["Km/l"], errors="coerce").fillna(0)
 
     df["Litros"] = pd.to_numeric(df["Litros"], errors="coerce").fillna(0) if "Litros" in df.columns else 0
     df["CO2"] = pd.to_numeric(df["CO2"], errors="coerce").fillna(0) if "CO2" in df.columns else 0
-
     df["RPM Verde (%)"] = pd.to_numeric(df["RPM Verde (%)"], errors="coerce").fillna(0) if "RPM Verde (%)" in df.columns else 0
     df["RPM Azul (%)"] = pd.to_numeric(df["RPM Azul (%)"], errors="coerce").fillna(0) if "RPM Azul (%)" in df.columns else 0
     df["RPM Amarela (%)"] = pd.to_numeric(df["RPM Amarela (%)"], errors="coerce").fillna(0) if "RPM Amarela (%)" in df.columns else 0
@@ -273,36 +324,7 @@ if arquivo is not None:
     df["Horas Parado"] = df["Tempo Parado"].apply(tempo_para_horas)
     df["Horas Condução"] = df["Tempo Condução"].apply(tempo_para_horas)
 
-    resumo = df.groupby("Motorista").agg({
-        "Distância (Km)": "sum",
-        "Km/l": "mean",
-        "Velocidade Máxima": "max",
-        "Horas Parado": "sum",
-        "Horas Condução": "sum",
-        "Litros": "sum",
-        "CO2": "sum",
-        "RPM Verde (%)": "mean",
-        "RPM Azul (%)": "mean",
-        "RPM Amarela (%)": "mean"
-    }).reset_index()
-
-    media_consumo = resumo[resumo["Km/l"] > 0]["Km/l"].mean()
-    media_km = resumo[resumo["Distância (Km)"] > 0]["Distância (Km)"].mean()
-
-    if pd.isna(media_consumo):
-        media_consumo = 0
-    if pd.isna(media_km):
-        media_km = 0
-
-    notas = resumo.apply(lambda row: calcular_notas(row, media_consumo, media_km), axis=1)
-
-    resumo["Segurança"] = [n[0] for n in notas]
-    resumo["Economia"] = [n[1] for n in notas]
-    resumo["RPM"] = [n[2] for n in notas]
-    resumo["Produtividade"] = [n[3] for n in notas]
-    resumo["Nota IDM Biomata"] = [n[4] for n in notas]
-    resumo["Classificação"] = resumo["Nota IDM Biomata"].apply(classificar)
-
+    resumo, media_consumo, media_km = gerar_resumo(df, ["Motorista"])
     resumo = resumo.sort_values(by="Nota IDM Biomata", ascending=False)
 
     st.sidebar.header("🔎 Filtros")
@@ -313,22 +335,14 @@ if arquivo is not None:
         data_inicio = st.sidebar.date_input("Escolha o dia", value=date.today(), format="DD/MM/YYYY")
         data_fim = data_inicio
         periodo_texto = data_inicio.strftime("%d/%m/%Y")
-
     elif tipo_periodo == "Período":
-        intervalo = st.sidebar.date_input(
-            "Escolha o período",
-            value=(date.today(), date.today()),
-            format="DD/MM/YYYY"
-        )
-
+        intervalo = st.sidebar.date_input("Escolha o período", value=(date.today(), date.today()), format="DD/MM/YYYY")
         if isinstance(intervalo, tuple) and len(intervalo) == 2:
             data_inicio, data_fim = intervalo
         else:
             data_inicio = date.today()
             data_fim = date.today()
-
         periodo_texto = f"{data_inicio.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}"
-
     else:
         data_mes = st.sidebar.date_input("Escolha qualquer dia do mês", value=date.today(), format="DD/MM/YYYY")
         ultimo_dia = calendar.monthrange(data_mes.year, data_mes.month)[1]
@@ -341,16 +355,35 @@ if arquivo is not None:
     motoristas = sorted(resumo["Motorista"].dropna().unique().tolist())
     motorista_selecionado = st.sidebar.selectbox("👤 Motorista", motoristas)
 
-    dados_motorista = resumo[resumo["Motorista"] == motorista_selecionado]
+    df_motorista = df[df["Motorista"] == motorista_selecionado]
+
+    resumo_prefixo, _, _ = gerar_resumo(
+        df_motorista,
+        ["Prefixo"],
+        media_consumo_base=media_consumo,
+        media_km_base=media_km
+    )
+
+    resumo_prefixo = resumo_prefixo.sort_values(by="Nota IDM Biomata", ascending=False)
+
+    prefixos = ["Todos"] + sorted(resumo_prefixo["Prefixo"].dropna().unique().tolist())
+    prefixo_selecionado = st.sidebar.selectbox("🚛 Prefixo / Caminhão", prefixos)
+
+    if prefixo_selecionado == "Todos":
+        dados_motorista = resumo[resumo["Motorista"] == motorista_selecionado].copy()
+        m = dados_motorista.iloc[0]
+        titulo_painel = motorista_selecionado
+    else:
+        dados_motorista = resumo_prefixo[resumo_prefixo["Prefixo"] == prefixo_selecionado].copy()
+        m = dados_motorista.iloc[0]
+        titulo_painel = f"{motorista_selecionado} | {prefixo_selecionado}"
 
     st.success("Arquivo processado com sucesso!")
 
     aba1, aba2, aba3 = st.tabs(["🚛 Painel do Motorista", "🏆 Ranking", "📋 Relatório"])
 
     with aba1:
-        m = dados_motorista.iloc[0]
-
-        st.subheader(f"🚛 {motorista_selecionado}")
+        st.subheader(f"🚛 {titulo_painel}")
         st.caption(f"Período selecionado: {periodo_texto}")
 
         c0, c1, c2, c3, c4 = st.columns([1.35, 1, 1, 1, 1])
@@ -414,6 +447,11 @@ if arquivo is not None:
 
         st.divider()
 
+        st.subheader("🚛 Caminhões trabalhados pelo motorista")
+        st.dataframe(resumo_prefixo, use_container_width=True, hide_index=True)
+
+        st.divider()
+
         st.subheader("📌 Indicadores do período")
 
         k1, k2, k3, k4, k5 = st.columns(5)
@@ -446,8 +484,11 @@ if arquivo is not None:
 
         st.bar_chart(rpm_df.set_index("Faixa"))
 
-        with st.expander("📂 Ver dados completos do motorista"):
-            st.dataframe(df[df["Motorista"] == motorista_selecionado], use_container_width=True, hide_index=True)
+        with st.expander("📂 Ver dados completos"):
+            if prefixo_selecionado == "Todos":
+                st.dataframe(df_motorista, use_container_width=True, hide_index=True)
+            else:
+                st.dataframe(df_motorista[df_motorista["Prefixo"] == prefixo_selecionado], use_container_width=True, hide_index=True)
 
     with aba2:
         st.subheader("🏆 Ranking IDM Biomata")
@@ -467,11 +508,19 @@ if arquivo is not None:
         st.subheader("📋 Relatório completo")
 
         csv = resumo.to_csv(index=False).encode("utf-8-sig")
+        csv_prefixo = resumo_prefixo.to_csv(index=False).encode("utf-8-sig")
 
         st.download_button(
             label="📥 Baixar Ranking IDM Biomata",
             data=csv,
             file_name="ranking_idm_biomata.csv",
+            mime="text/csv"
+        )
+
+        st.download_button(
+            label="📥 Baixar Caminhões do Motorista",
+            data=csv_prefixo,
+            file_name="caminhoes_motorista_idm.csv",
             mime="text/csv"
         )
 
