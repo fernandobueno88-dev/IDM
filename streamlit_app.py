@@ -58,17 +58,36 @@ def tempo_para_horas(valor):
     return horas + minutos / 60 + segundos / 3600
 
 
+def horas_para_texto(horas):
+    h = int(horas)
+    m = int((horas - h) * 60)
+    return f"{h}h {m}min"
+
+
 def classificar_idm(nota):
     if nota >= 90:
-        return "Excelente 🟢"
+        return "Excelente"
     elif nota >= 80:
-        return "Bom 🔵"
+        return "Bom"
     elif nota >= 70:
-        return "Atenção 🟡"
+        return "Atenção"
     elif nota >= 60:
-        return "Ruim 🟠"
+        return "Ruim"
     else:
-        return "Crítico 🔴"
+        return "Crítico"
+
+
+def cor_nota(nota):
+    if nota >= 90:
+        return "#16a34a"
+    elif nota >= 80:
+        return "#2563eb"
+    elif nota >= 70:
+        return "#facc15"
+    elif nota >= 60:
+        return "#f97316"
+    else:
+        return "#dc2626"
 
 
 def calcular_idm(row, media_consumo, media_km):
@@ -100,31 +119,23 @@ def calcular_idm(row, media_consumo, media_km):
 
 
 def indicador_circular(nota):
-    cor = "#16a34a"
-    if nota < 90:
-        cor = "#2563eb"
-    if nota < 80:
-        cor = "#facc15"
-    if nota < 70:
-        cor = "#f97316"
-    if nota < 60:
-        cor = "#dc2626"
+    cor = cor_nota(nota)
 
     html = f"""
     <div style="display:flex; justify-content:center; align-items:center;">
         <div style="
-            width:220px;
-            height:220px;
+            width:230px;
+            height:230px;
             border-radius:50%;
             background: conic-gradient({cor} {nota * 3.6}deg, #e5e7eb 0deg);
             display:flex;
             align-items:center;
             justify-content:center;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            box-shadow: 0 4px 22px rgba(0,0,0,0.18);
         ">
             <div style="
-                width:160px;
-                height:160px;
+                width:165px;
+                height:165px;
                 border-radius:50%;
                 background:white;
                 display:flex;
@@ -132,13 +143,54 @@ def indicador_circular(nota):
                 align-items:center;
                 justify-content:center;
             ">
-                <div style="font-size:42px; font-weight:800; color:{cor};">{nota:.0f}</div>
+                <div style="font-size:46px; font-weight:900; color:{cor};">{nota:.0f}</div>
                 <div style="font-size:16px; color:#555;">Nota IDM</div>
             </div>
         </div>
     </div>
     """
     st.markdown(html, unsafe_allow_html=True)
+
+
+def card(titulo, valor, subtitulo=""):
+    st.markdown(
+        f"""
+        <div style="
+            padding:18px;
+            border-radius:14px;
+            background:#f8fafc;
+            border:1px solid #e5e7eb;
+            box-shadow:0 2px 8px rgba(0,0,0,0.05);
+            min-height:120px;
+        ">
+            <div style="font-size:15px; color:#64748b;">{titulo}</div>
+            <div style="font-size:32px; font-weight:800; color:#0f172a; margin-top:8px;">{valor}</div>
+            <div style="font-size:13px; color:#64748b; margin-top:6px;">{subtitulo}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def barra_indicador(nome, valor, maximo, unidade=""):
+    percentual = 0
+    if maximo > 0:
+        percentual = min((valor / maximo) * 100, 100)
+
+    st.markdown(
+        f"""
+        <div style="margin-bottom:18px;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                <span style="font-weight:700;">{nome}</span>
+                <span>{valor:.2f} {unidade}</span>
+            </div>
+            <div style="width:100%; height:16px; background:#e5e7eb; border-radius:20px;">
+                <div style="width:{percentual}%; height:16px; background:#16a34a; border-radius:20px;"></div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 
 if arquivo is not None:
@@ -157,7 +209,6 @@ if arquivo is not None:
     col_consumo = encontrar_coluna(df, ["km/l"])
     col_parado = encontrar_coluna(df, ["tempo", "parado"])
     col_conducao = encontrar_coluna(df, ["tempo", "condu"])
-    col_data = encontrar_coluna(df, ["data"])
 
     colunas = {
         "Motorista": col_motorista,
@@ -178,19 +229,14 @@ if arquivo is not None:
         st.write(df.columns.tolist())
         st.stop()
 
-    renomear = {
+    df = df.rename(columns={
         col_motorista: "Motorista",
         col_distancia: "Distância (Km)",
         col_velocidade: "Velocidade Máxima",
         col_consumo: "Km/l",
         col_parado: "Tempo Parado",
         col_conducao: "Tempo Condução"
-    }
-
-    if col_data is not None:
-        renomear[col_data] = "Data"
-
-    df = df.rename(columns=renomear)
+    })
 
     df = df[df["Motorista"].notna()]
     df = df[df["Motorista"].astype(str).str.strip() != ""]
@@ -201,31 +247,6 @@ if arquivo is not None:
 
     df["Horas Parado"] = df["Tempo Parado"].apply(tempo_para_horas)
     df["Horas Condução"] = df["Tempo Condução"].apply(tempo_para_horas)
-
-    if "Data" in df.columns:
-        df["Data"] = pd.to_datetime(df["Data"], errors="coerce").dt.date
-
-    st.sidebar.header("🔎 Filtros")
-
-    motoristas = sorted(df["Motorista"].dropna().unique().tolist())
-    motorista_selecionado = st.sidebar.selectbox("Motorista", motoristas)
-
-    if "Data" in df.columns and df["Data"].notna().any():
-        data_min = df["Data"].min()
-        data_max = df["Data"].max()
-
-        intervalo_data = st.sidebar.date_input(
-            "Período",
-            value=(data_min, data_max),
-            min_value=data_min,
-            max_value=data_max
-        )
-
-        if isinstance(intervalo_data, tuple) and len(intervalo_data) == 2:
-            inicio, fim = intervalo_data
-            df = df[(df["Data"] >= inicio) & (df["Data"] <= fim)]
-    else:
-        st.sidebar.info("Este relatório não trouxe uma coluna de data identificável.")
 
     resumo = df.groupby("Motorista").agg({
         "Distância (Km)": "sum",
@@ -240,6 +261,7 @@ if arquivo is not None:
 
     if pd.isna(media_consumo):
         media_consumo = 0
+
     if pd.isna(media_km):
         media_km = 0
 
@@ -251,48 +273,116 @@ if arquivo is not None:
     resumo["Classificação"] = resumo["Nota IDM"].apply(classificar_idm)
     resumo = resumo.sort_values(by="Nota IDM", ascending=False)
 
+    st.sidebar.header("🔎 Filtros")
+
+    data_relatorio = st.sidebar.date_input(
+        "📅 Data do relatório",
+        value=date.today()
+    )
+
+    motoristas = sorted(resumo["Motorista"].dropna().unique().tolist())
+    motorista_selecionado = st.sidebar.selectbox("👤 Motorista", motoristas)
+
     dados_motorista = resumo[resumo["Motorista"] == motorista_selecionado]
 
     st.success("Arquivo processado com sucesso!")
 
-    aba1, aba2, aba3 = st.tabs(["👤 Motorista", "📊 Dashboard Geral", "📋 Dados"])
+    aba1, aba2, aba3 = st.tabs(["👤 Motorista", "🏆 Ranking", "📋 Relatório Completo"])
 
     with aba1:
         if dados_motorista.empty:
-            st.warning("Motorista sem dados no período selecionado.")
+            st.warning("Motorista sem dados.")
         else:
             m = dados_motorista.iloc[0]
 
-            st.subheader(f"👤 {motorista_selecionado}")
+            nota = m["Nota IDM"]
+            classificacao = m["Classificação"]
+            cor = cor_nota(nota)
 
-            col_nota, col_info = st.columns([1, 2])
+            st.subheader(f"👤 {motorista_selecionado}")
+            st.caption(f"Data do relatório: {data_relatorio.strftime('%d/%m/%Y')}")
+
+            col_nota, col_cards = st.columns([1, 2.4])
 
             with col_nota:
-                indicador_circular(m["Nota IDM"])
+                indicador_circular(nota)
                 st.markdown(
-                    f"<h3 style='text-align:center'>{m['Classificação']}</h3>",
+                    f"""
+                    <h2 style="text-align:center; color:{cor}; margin-top:20px;">
+                        {classificacao}
+                    </h2>
+                    """,
                     unsafe_allow_html=True
                 )
 
-            with col_info:
+            with col_cards:
                 c1, c2, c3 = st.columns(3)
-                c1.metric("KM Rodado", f'{m["Distância (Km)"]:,.0f} km')
-                c2.metric("Consumo", f'{m["Km/l"]:.2f} km/l')
-                c3.metric("Velocidade Máxima", f'{m["Velocidade Máxima"]:.0f} km/h')
+                with c1:
+                    card("🚛 KM Rodado", f'{m["Distância (Km)"]:,.0f} km')
+                with c2:
+                    card("⛽ Consumo", f'{m["Km/l"]:.2f} km/l')
+                with c3:
+                    card("⚡ Velocidade Máxima", f'{m["Velocidade Máxima"]:.0f} km/h')
 
                 c4, c5, c6 = st.columns(3)
-                c4.metric("Tempo Parado", f'{m["Horas Parado"]:.1f} h')
-                c5.metric("Tempo Condução", f'{m["Horas Condução"]:.1f} h')
-                c6.metric("Nota IDM", f'{m["Nota IDM"]:.0f}')
+                with c4:
+                    card("🕒 Tempo Parado", horas_para_texto(m["Horas Parado"]))
+                with c5:
+                    card("🛣️ Tempo Condução", horas_para_texto(m["Horas Condução"]))
+                with c6:
+                    card("⭐ Nota IDM", f'{m["Nota IDM"]:.0f}', classificacao)
 
             st.divider()
 
-            st.subheader("📌 Detalhamento do motorista")
-            dados_filtrados_motorista = df[df["Motorista"] == motorista_selecionado]
-            st.dataframe(dados_filtrados_motorista, use_container_width=True, hide_index=True)
+            st.subheader("📊 Indicadores do Motorista")
+
+            max_km = resumo["Distância (Km)"].max()
+            max_consumo = resumo["Km/l"].max()
+            max_parado = resumo["Horas Parado"].max()
+            max_conducao = resumo["Horas Condução"].max()
+
+            barra_indicador("KM Rodado", m["Distância (Km)"], max_km, "km")
+            barra_indicador("Consumo", m["Km/l"], max_consumo, "km/l")
+            barra_indicador("Tempo Condução", m["Horas Condução"], max_conducao, "h")
+            barra_indicador("Tempo Parado", m["Horas Parado"], max_parado, "h")
+
+            st.divider()
+
+            st.subheader("📌 Resumo fácil de ler")
+
+            resumo_facil = pd.DataFrame({
+                "Indicador": [
+                    "Motorista",
+                    "Data do relatório",
+                    "Nota IDM",
+                    "Classificação",
+                    "KM Rodado",
+                    "Consumo",
+                    "Velocidade Máxima",
+                    "Tempo Parado",
+                    "Tempo Condução"
+                ],
+                "Resultado": [
+                    motorista_selecionado,
+                    data_relatorio.strftime("%d/%m/%Y"),
+                    f'{m["Nota IDM"]:.0f}',
+                    classificacao,
+                    f'{m["Distância (Km)"]:,.0f} km',
+                    f'{m["Km/l"]:.2f} km/l',
+                    f'{m["Velocidade Máxima"]:.0f} km/h',
+                    horas_para_texto(m["Horas Parado"]),
+                    horas_para_texto(m["Horas Condução"])
+                ]
+            })
+
+            st.dataframe(resumo_facil, use_container_width=True, hide_index=True)
+
+            with st.expander("📂 Ver dados completos deste motorista"):
+                dados_filtrados_motorista = df[df["Motorista"] == motorista_selecionado]
+                st.dataframe(dados_filtrados_motorista, use_container_width=True, hide_index=True)
 
     with aba2:
-        st.subheader("📊 Dashboard Executivo")
+        st.subheader("🏆 Ranking IDM")
 
         col1, col2, col3, col4, col5 = st.columns(5)
 
@@ -300,28 +390,21 @@ if arquivo is not None:
         col2.metric("KM Total", f'{resumo["Distância (Km)"].sum():,.0f} km')
         col3.metric("Consumo Médio", f"{media_consumo:.2f} km/l")
         col4.metric("Nota Média", f'{resumo["Nota IDM"].mean():.1f}')
-        col5.metric("Velocidade Máxima", f'{resumo["Velocidade Máxima"].max():.0f} km/h')
+        col5.metric("Maior Velocidade", f'{resumo["Velocidade Máxima"].max():.0f} km/h')
 
         st.divider()
 
-        st.subheader("🏆 Ranking IDM")
         st.dataframe(resumo, use_container_width=True, hide_index=True)
 
         st.subheader("📈 Top 10 Motoristas")
         top10 = resumo.head(10).set_index("Motorista")
         st.bar_chart(top10["Nota IDM"])
 
-        st.subheader("⛽ Consumo por Motorista")
-        consumo = resumo.sort_values(by="Km/l", ascending=False).set_index("Motorista")
-        st.bar_chart(consumo["Km/l"])
-
-        st.subheader("🚛 KM Rodado por Motorista")
-        km = resumo.sort_values(by="Distância (Km)", ascending=False).set_index("Motorista")
-        st.bar_chart(km["Distância (Km)"])
-
     with aba3:
-        st.subheader("📋 Dados Originais")
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.subheader("📋 Relatório completo")
+
+        with st.expander("📂 Abrir dados originais"):
+            st.dataframe(df, use_container_width=True, hide_index=True)
 
         csv = resumo.to_csv(index=False).encode("utf-8-sig")
 
