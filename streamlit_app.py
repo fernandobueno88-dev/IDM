@@ -1,9 +1,10 @@
 import streamlit as st
 import pandas as pd
 import re
+import calendar
 from datetime import date
 
-st.set_page_config(page_title="IDM Analytics", page_icon="🚛", layout="wide")
+st.set_page_config(page_title="IDM – Índice de Desempenho do Motorista Biomata", page_icon="🚛", layout="wide")
 
 st.markdown("""
 <style>
@@ -326,14 +327,51 @@ if arquivo is not None:
 
     st.sidebar.header("🔎 Filtros")
 
-    tipo_periodo = st.sidebar.radio("📅 Tipo de período", ["Dia", "Mês"])
+    tipo_periodo = st.sidebar.radio(
+        "📅 Tipo de período",
+        ["Dia", "Período", "Mês"]
+    )
 
     if tipo_periodo == "Dia":
-        data_relatorio = st.sidebar.date_input("Escolha o dia", value=date.today())
-        periodo_texto = data_relatorio.strftime("%d/%m/%Y")
+        data_inicio = st.sidebar.date_input(
+            "Escolha o dia",
+            value=date.today(),
+            format="DD/MM/YYYY"
+        )
+        data_fim = data_inicio
+        periodo_texto = data_inicio.strftime("%d/%m/%Y")
+
+    elif tipo_periodo == "Período":
+        intervalo = st.sidebar.date_input(
+            "Escolha o período",
+            value=(date.today(), date.today()),
+            format="DD/MM/YYYY"
+        )
+
+        if isinstance(intervalo, tuple) and len(intervalo) == 2:
+            data_inicio, data_fim = intervalo
+        else:
+            data_inicio = date.today()
+            data_fim = date.today()
+
+        periodo_texto = f"{data_inicio.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}"
+
     else:
-        data_relatorio = st.sidebar.date_input("Escolha qualquer dia do mês", value=date.today())
-        periodo_texto = data_relatorio.strftime("%m/%Y")
+        data_mes = st.sidebar.date_input(
+            "Escolha qualquer dia do mês",
+            value=date.today(),
+            format="DD/MM/YYYY"
+        )
+
+        ultimo_dia = calendar.monthrange(data_mes.year, data_mes.month)[1]
+        data_inicio = date(data_mes.year, data_mes.month, 1)
+        data_fim = date(data_mes.year, data_mes.month, ultimo_dia)
+
+        periodo_texto = data_mes.strftime("%m/%Y")
+
+    st.sidebar.info(
+        f"Período aplicado: {data_inicio.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}"
+    )
 
     motoristas = sorted(resumo["Motorista"].dropna().unique().tolist())
     motorista_selecionado = st.sidebar.selectbox("👤 Motorista", motoristas)
